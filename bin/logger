@@ -1,0 +1,61 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const {NetCheckNode} = require('hsd-nethealth');
+const JSONStore = require('../lib/jsonstore');
+const {getConfigs} = require('../lib/config');
+
+const config = getConfigs({
+  argv: true,
+  env: true
+});
+
+const node = new NetCheckNode({
+  ...config.data,
+  prefix: config.prefix
+});
+
+const dnsStore = new JSONStore({
+  prefix: config.prefix,
+  name: 'dns',
+  maxFileSize: config.mb('dns-max-file-size', 50 << 20), // default 50MB
+  autoGzip: config.bool('dns-auto-gzip', true)
+});
+
+const nodesStore = new JSONStore({
+  prefix: config.prefix,
+  name: 'nodes',
+  maxFileSize: config.mb('nodes-max-file-size', 50 << 20), // default 50MB
+  autoGzip: config.bool('nodes-auto-gzip', true)
+});
+
+node.on('error', (err) => {
+  console.error(err.stack);
+});
+
+// Write to stores.
+node.on('dns-success', (info) => {
+  dnsStore.writeJSONLine(info);
+});
+
+node.on('dns-fail', (info) => {
+  dnsStore.writeJSONLine(info);
+});
+
+node.on('node-success', (info) => {
+  nodesStore.writeJSONLine(info);
+});
+
+node.on('node-fail', (info) => {
+  nodesStore.writeJSONLine(info);
+});
+
+(async () => {
+  await dnsStore.open();
+  await nodesStore.open();
+  await node.open();
+})().catch((e) => {
+  console.error(e.stack);
+  process.exit(1);
+});
