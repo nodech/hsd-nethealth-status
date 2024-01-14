@@ -20,6 +20,6 @@
     "bcfg": "^0.2.2",
     "bfile": "^0.2.3",
     "bsert": "^0.0.12",
-    "hsd-nethealth": "^0.0.1"
+    "hsd-nethealth": "^0.0.2"
   }
 }
