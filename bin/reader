@@ -1,0 +1,35 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const Reader = require('../lib/store/reader');
+const {getConfigs} = require('../lib/config');
+
+const config = getConfigs({
+  argv: true,
+  env: true
+});
+
+process.stdout.on('error', () => {
+  // ignore
+  ;
+});
+
+const name = config.str('name', 'nodes');
+const reader = new Reader({
+  prefix: config.prefix,
+  name: name
+});
+
+(async () => {
+  await reader.open(0);
+
+  for await (const node of reader) {
+    process.stdout.write(JSON.stringify(node) + '\n');
+  }
+
+  await reader.close();
+})().catch((e) => {
+  console.error(e.stack);
+  process.exit(1);
+});
