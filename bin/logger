@@ -38,32 +38,27 @@ node.on('error', (err) => {
 
 // Write to stores.
 node.on('dns-success', (info) => {
-  dnsStore.writeJSONLine({
-    logTimestamp: Date.now(),
-    info
-  });
+  writeData(dnsStore, info);
 });
 
 node.on('dns-fail', (info) => {
-  dnsStore.writeJSONLine({
-    logTimestamp: Date.now(),
-    info
-  });
+  writeData(dnsStore, info);
 });
 
 node.on('node-success', (info) => {
-  nodesStore.writeJSONLine({
-    logTimestamp: Date.now(),
-    info
-  });
+  writeData(nodesStore, info);
 });
 
 node.on('node-fail', (info) => {
-  nodesStore.writeJSONLine({
-    logTS: Date.now(),
+  writeData(nodesStore, info);
+});
+
+function writeData(store, info) {
+  store.writeJSONLine({
+    logTimestamp: Date.now(),
     info
   });
-});
+}
 
 (async () => {
   await dnsStore.open();
