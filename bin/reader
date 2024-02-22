@@ -2,7 +2,7 @@
 
 'use strict';
 
-const Reader = require('../lib/store/reader');
+const JSONReader = require('../lib/log/jsonreader');
 const {getConfigs} = require('../lib/config');
 
 const config = getConfigs({
@@ -16,7 +16,7 @@ process.stdout.on('error', () => {
 });
 
 const name = config.str('name', 'nodes');
-const reader = new Reader({
+const reader = new JSONReader({
   prefix: config.prefix,
   name: name
 });

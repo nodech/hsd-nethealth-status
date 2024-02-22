@@ -3,7 +3,7 @@
 'use strict';
 
 const {NetCheckNode} = require('hsd-nethealth');
-const JSONStoreWriter = require('../lib/store/writer');
+const JSONWriter = require('../lib/log/jsonwriter');
 const {getConfigs} = require('../lib/config');
 
 const config = getConfigs({
@@ -18,16 +18,16 @@ const node = new NetCheckNode({
   prefix: config.prefix
 });
 
-const dnsStore = new JSONStoreWriter({
+const dnsStore = new JSONWriter({
   prefix: config.prefix,
-  name: 'dns',
+  name: config.str('dns-name', 'dns'),
   maxFileSize: config.mb('dns-max-file-size', 50 << 20), // default 50MB
   autoGzip: config.bool('dns-auto-gzip', true)
 });
 
-const nodesStore = new JSONStoreWriter({
+const nodesStore = new JSONWriter({
   prefix: config.prefix,
-  name: 'nodes',
+  name: config.str('nodes-name', 'nodes'),
   maxFileSize: config.mb('nodes-max-file-size', 50 << 20), // default 50MB
   autoGzip: config.bool('nodes-auto-gzip', true)
 });

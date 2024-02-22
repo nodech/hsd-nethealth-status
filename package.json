@@ -4,6 +4,7 @@
   "description": "",
   "main": "lib/nethealth-status.js",
   "scripts": {
+    "lint": "eslint $(cat .eslintfiles)",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
