@@ -1,0 +1,259 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const assert = require('bsert');
+const path = require('path');
+const bfs = require('bfile');
+const {getConfigs} = require('../lib/config');
+const StatusDB = require('../lib/store/statusdb');
+const common = require('../lib/common');
+
+/** @typedef {import('../lib/store/dns')} DNSIndexer */
+
+const DNS_TOTAL = 2;
+
+const config = getConfigs({
+  argv: true,
+  env: true
+});
+
+const NOW = config.int('now', Date.now());
+
+const sdb = new StatusDB({
+  prefix: config.prefix
+});
+
+(async () => {
+  const out = config.get('output');
+  assert(await bfs.exists(out), 'Output directory does not exist.');
+
+  const {dnsIndexer} = sdb;
+  await sdb.open();
+
+  // generate header info
+  const headerPath = path.join(out, 'general.json');
+  await bfs.writeJSON(headerPath, await generateHeaderInfo(dnsIndexer));
+
+  // per hostname stats
+  const statsPath = path.join(out, 'stats-info');
+  await generateGeneralStats(statsPath, dnsIndexer);
+
+  // per hostname bucket stats
+  // We generate 3 buckets:
+  //  - 10 minute intervals for 24 hours.
+  //  - 1 hour intervals for 1 week.
+  //  - 1 day intervals for 5 months.
+  const stats10mPath = path.join(out, 'stats-day-10m');
+  await generate10MinuteStats(stats10mPath, dnsIndexer, common.DAY);
+
+  const statsHourlyPath = path.join(out, 'stats-week-hour');
+  await generateHourlyStats(statsHourlyPath, dnsIndexer, common.WEEK);
+
+  const statsDailyPath5m = path.join(out, 'stats-5months-day');
+  await generateDailyStats(statsDailyPath5m, dnsIndexer, common.MONTH * 5);
+
+  // Online count
+  const up10mPath = path.join(out, 'up-day-10m.json');
+  await generateUpCount10m(up10mPath, dnsIndexer, common.DAY);
+
+  const upHourlyPath = path.join(out, 'up-week-hour.json');
+  await generateUpCountHourly(upHourlyPath, dnsIndexer, common.WEEK);
+
+  const upDailyPath5m = path.join(out, 'up-5months-day.json');
+  await generateUpCountDaily(upDailyPath5m, dnsIndexer, common.MONTH * 5);
+
+  await sdb.close();
+})().catch((e) => {
+  console.error(e.stack);
+  process.exit(1);
+});
+
+async function generateHeaderInfo(dnsIndexer) {
+  const out = {
+    timestamp: Date.now(),
+    up: await dnsIndexer.getUpCount(),
+    total: DNS_TOTAL
+  };
+
+  return out;
+}
+
+/**
+ * @param {String} out
+ * @param {DNSIndexer} dnsIndexer
+ * @returns {Promise<void>}
+ */
+
+async function generateGeneralStats(out, dnsIndexer) {
+  await bfs.mkdirp(out);
+
+  for await (const hostname of dnsIndexer.getHostnames()) {
+    const filename = path.join(out, `${hostname}.json`);
+    const json = {
+      timestamp: Date.now(),
+      lastUp: await dnsIndexer.getLastUp(Buffer.from(hostname, 'utf8')),
+      lastStatus: await dnsIndexer.getLastStatus(Buffer.from(hostname, 'utf8'))
+    };
+
+    await bfs.writeJSON(filename, json);
+  }
+}
+
+/**
+ * Generate days worth of stats based on 10 minute intervals.
+ * @param {String} out
+ * @param {DNSIndexer} dnsIndexer
+ * @param {Number} [range=common.DAY]
+ */
+
+async function generate10MinuteStats(out, dnsIndexer, range = common.DAY) {
+  const statsDir = out;
+  const timeSince = NOW - range;
+
+  await bfs.mkdirp(statsDir);
+
+  for await (const hostname of dnsIndexer.getHostnames()) {
+    const filename = path.join(statsDir, `${hostname}.json`);
+    const json = {
+      timestamp: Date.now(),
+      data: {}
+    };
+
+    const iter = dnsIndexer.getLastStatusesByTime(hostname, timeSince);
+    for await (const [time, stat] of iter) {
+      json.data[time] = stat.isSuccessful() ? 1 : 0;
+    }
+
+    await bfs.writeJSON(filename, json);
+  }
+}
+
+/**
+ * Generate monthly stats based on 1 hour intervals.
+ * @param {String} out
+ * @param {DNSIndexer} dnsIndexer
+ * @param {Number} [range=common.MONTH]
+ */
+
+async function generateHourlyStats(out, dnsIndexer, range = common.MONTH) {
+  const statsDir = out;
+  const timeSince = NOW - range;
+
+  await bfs.mkdirp(statsDir);
+
+  for await (const hostname of dnsIndexer.getHostnames()) {
+    const filename = path.join(statsDir, `${hostname}.json`);
+    const json = {
+      timestamp: Date.now(),
+      data: {}
+    };
+
+    const iter = dnsIndexer.getHourlyStatusesByTime(hostname, timeSince);
+    for await (const [time, stat] of iter) {
+      const entry = stat.toJSON();
+      json.data[time] = entry;
+    }
+
+    await bfs.writeJSON(filename, json);
+  }
+}
+
+/**
+ * Generate statuses based on 1 day intervals.
+ * @param {String} out
+ * @param {DNSIndexer} dnsIndexer
+ * @param {Number} [range=common.MONTH * 3]
+ */
+
+async function generateDailyStats(out, dnsIndexer, range = common.MONTH * 3) {
+  const statsDir = out;
+  const timeSince = NOW - range;
+
+  await bfs.mkdirp(statsDir);
+
+  for await (const hostname of dnsIndexer.getHostnames()) {
+    const filename = path.join(statsDir, `${hostname}.json`);
+    const json = {
+      timestamp: Date.now(),
+      data: {}
+    };
+
+    const iter = dnsIndexer.getDailyStatusesByTime(hostname, timeSince);
+    for await (const [time, stat] of iter) {
+      const entry = stat.toJSON();
+      json.data[time] = entry;
+    }
+
+    await bfs.writeJSON(filename, json);
+  }
+}
+
+/**
+ * Generate UP count using 10m intervals.
+ * @param {String} jsonOut
+ * @param {DNSIndexer} dnsIndexer
+ * @param {Number} [range=common.DAY]
+ */
+
+async function generateUpCount10m(jsonOut, dnsIndexer, range = common.DAY) {
+  const timeSince = NOW - range;
+
+  const iter = dnsIndexer.get10mUpCountsByTime(timeSince);
+  const json = {
+    timestamp: Date.now(),
+    data: {}
+  };
+
+  for await (const [time, count] of iter) {
+    json.data[time] = count;
+  }
+
+  await bfs.writeJSON(jsonOut, json);
+}
+
+/**
+ * Generate UP count using hourly intervals.
+ * @param {String} jsonOut
+ * @param {DNSIndexer} dnsIndexer
+ * @param {Number} [range=common.MONTH]
+ */
+
+async function generateUpCountHourly(jsonOut, dnsIndexer, range = common.MONTH) {
+  const timeSince = NOW - range;
+
+  const iter = dnsIndexer.getHourlyUpCountsByTime(timeSince);
+  const json = {
+    timestamp: Date.now(),
+    data: {}
+  };
+
+  for await (const [time, count] of iter) {
+    json.data[time] = count;
+  }
+
+  await bfs.writeJSON(jsonOut, json);
+}
+
+/**
+ * Generate UP count using daily intervals.
+ * @param {String} jsonOut
+ * @param {DNSIndexer} dnsIndexer
+ * @param {Number} [range=common.MONTH * 3]
+ */
+
+async function generateUpCountDaily(jsonOut, dnsIndexer, range = common.MONTH * 3) {
+  const timeSince = NOW - range;
+
+  const iter = dnsIndexer.getDailyUpCountsByTime(timeSince);
+  const json = {
+    timestamp: Date.now(),
+    data: {}
+  };
+
+  for await (const [time, count] of iter) {
+    json.data[time] = count;
+  }
+
+  await bfs.writeJSON(jsonOut, json);
+}

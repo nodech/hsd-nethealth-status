@@ -1,0 +1,58 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const JSONReader = require('../lib/log/jsonreader');
+const NodesWriter = require('../lib/log/nodeswriter');
+const JSONWriter = require('../lib/log/jsonwriter');
+const {getConfigs} = require('../lib/config');
+
+const config = getConfigs({
+  argv: true,
+  env: true
+});
+
+process.stdout.on('error', () => {
+  // ignore
+  ;
+});
+
+const name = config.str('name', 'nodes');
+const reader = new JSONReader({
+  prefix: config.prefix,
+  name: name
+});
+
+const writer = new NodesWriter({
+  prefix: config.prefix,
+  name: name + '-bin',
+  maxFileSize: config.mb('max-file-size', 100 << 20), // default 50MB
+  autoGzip: config.bool('auto-gzip', true)
+});
+
+const writer2 = new JSONWriter({
+  prefix: config.prefix,
+  name: name + '-json',
+  maxFileSize: config.mb('max-file-size', 500 << 20),
+  autoGzip: config.bool('auto-gzip', true)
+});
+
+(async () => {
+  await reader.open(0);
+  await writer.open(0);
+  await writer2.open(0);
+
+  for await (const node of reader) {
+    writer.writeLog(node.logTimestamp, node.info);
+    writer2.writeJSONLine({
+      logTimestamp: node.logTimestamp,
+      info: node.info
+    }, node.logTimestamp);
+    // process.stdout.write(JSON.stringify(node) + '\n');
+  }
+
+  await reader.close();
+})().catch((e) => {
+  console.error(e.stack);
+  process.exit(1);
+});

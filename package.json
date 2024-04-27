@@ -19,8 +19,17 @@
   "homepage": "https://github.com/nodech/hsd-nethealth-status#readme",
   "dependencies": {
     "bcfg": "^0.2.2",
+    "bdb": "^1.5.1",
     "bfile": "^0.2.3",
+    "binet": "^0.3.9",
+    "blru": "^0.1.7",
     "bsert": "^0.0.12",
+    "buffer-map": "^0.0.7",
+    "bufio": "^1.2.1",
+    "hsd": "^6.1.1",
     "hsd-nethealth": "^0.0.2"
+  },
+  "devDependencies": {
+    "perf-utils": "^0.0.3"
   }
 }

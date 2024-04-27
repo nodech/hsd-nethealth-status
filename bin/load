@@ -1,0 +1,125 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const {getConfigs} = require('../lib/config');
+const JSONReader = require('../lib/log/jsonreader');
+const StatusDB = require('../lib/store/statusdb');
+const {DNSEntry, NodeEntry} = require('../lib/entry');
+const {PerformanceTraces} = require('perf-utils');
+
+const config = getConfigs({
+  argv: true,
+  env: true
+});
+
+const traceEnabled = config.bool('trace', false);
+const traceFile = config.str('trace-file', '/tmp/load-trace.json');
+
+const traces = new PerformanceTraces({
+  filename: traceFile
+});
+
+if (traceEnabled) {
+  traces.timerifyClass(require('../lib/store/statusdb'), 'StatusDB');
+}
+
+if (traceEnabled && config.bool('trace-dns', false)) {
+  traces.timerifyClass(require('../lib/store/dns'), 'DNSIndexer');
+}
+
+if (traceEnabled && config.bool('trace-node', false)) {
+  traces.timerifyClass(require('../lib/store/node'), 'NodeIndexer');
+}
+
+const logTimes = config.bool('log-times', false);
+const logFileOpens = config.bool('log-file-opens', false);
+
+const dnsReader = new JSONReader({
+  prefix: config.prefix,
+  name: config.str('dns-name', 'dns')
+});
+
+const nodesReader = new JSONReader({
+  prefix: config.prefix,
+  name: config.str('nodes-name', 'nodes')
+});
+
+const sdb = new StatusDB({
+  prefix: config.prefix
+});
+
+(async () => {
+  if (traceEnabled)
+    await traces.open();
+
+  const {dnsIndexer, nodeIndexer} = sdb;
+  await sdb.open();
+
+  // process DNS logs
+  const dnsStart = await dnsIndexer.getLastTimestamp();
+  await dnsReader.open(dnsStart);
+
+  for await (const json of dnsReader) {
+    const entry = DNSEntry.fromJSON(json);
+    await sdb.indexDNS(entry);
+  }
+
+  if (logFileOpens) {
+    nodesReader.on('file open', (...args) => {
+      console.log('Opening file: ', ...args);
+    });
+    nodesReader.on('file close', (...args) => {
+      console.log('Opening file: ', ...args);
+    });
+  }
+
+  if (logTimes) {
+    console.log('Indexing node logs.');
+  }
+
+  // process NODE logs
+  const nodeStart = await nodeIndexer.getLastTimestamp();
+  await nodesReader.open(nodeStart);
+
+  nodesReader.on('error', (err) => {
+    console.error(err.stack);
+  });
+
+  if (logTimes)
+    console.time('indexing-node');
+
+  let count = 0;
+
+  if (logTimes)
+    console.time('indexing-node-10k');
+
+  for await (const json of nodesReader) {
+    const entry = NodeEntry.fromLogJSON(json);
+    await sdb.indexNode(entry);
+
+    if (logTimes) {
+      count++;
+      if (count % 10_000 === 0) {
+        console.timeEnd('indexing-node-10k');
+        console.time('indexing-node-10k');
+        console.log('Processed %d node entries.', count);
+      }
+
+      if (count % 1_000_000 === 0) {
+        console.log('Processed %d node entries.', count);
+      }
+    }
+  }
+
+  if (logTimes) {
+    console.timeEnd('indexing-node');
+  }
+
+  await sdb.close();
+  await nodesReader.close();
+  await dnsReader.close();
+})().catch((e) => {
+  console.error(e.stack);
+  process.exit(1);
+});
