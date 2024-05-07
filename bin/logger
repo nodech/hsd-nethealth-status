@@ -54,10 +54,11 @@ node.on('node-fail', (info) => {
 });
 
 function writeData(store, info) {
+  const now = Date.now();
   store.writeJSONLine({
-    logTimestamp: Date.now(),
+    logTimestamp: now,
     info
-  });
+  }, now);
 }
 
 (async () => {
