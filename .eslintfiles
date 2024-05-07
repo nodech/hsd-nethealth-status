@@ -2,5 +2,5 @@ bin/logger
 bin/reader
 bin/load
 bin/generate-dns
-bin/generate-node
+bin/generate-nodes
 lib/

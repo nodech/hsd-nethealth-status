@@ -1,0 +1,261 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const assert = require('bsert');
+const path = require('path');
+const bfs = require('bfile');
+const {getConfigs} = require('../lib/config');
+const StatusDB = require('../lib/store/statusdb');
+const hsd = require('hsd');
+const hsdVersion = hsd.pkg.version;
+const binet = require('binet');
+const hsdNetwork = hsd.Network.get('main');
+const seeds = require('hsd/lib/net/seeds/main');
+const common = require('../lib/common');
+
+/** @typedef {import('../lib/store/node')} NodeIndexer */
+
+const config = getConfigs({
+  argv: true,
+  env: true
+});
+
+const NOW = config.int('now', Date.now());
+
+const sdb = new StatusDB({
+  prefix: config.prefix
+});
+
+(async () => {
+  const out = config.get('output');
+  assert(await bfs.exists(out), 'Output directory does not exist.');
+
+  const {nodeIndexer} = sdb;
+  await sdb.open();
+
+  const totalNowPath = path.join(out, 'general.json');
+  await generateTotalNow(nodeIndexer, totalNowPath);
+
+  const active10mday = path.join(out, 'active-10m-day.json');
+  await generate10MinuteActiveNodes(nodeIndexer, active10mday, common.DAY);
+
+  const activeHourWeek = path.join(out, 'active-hour-week.json');
+  await generateHourlyActiveNode(nodeIndexer, activeHourWeek, common.WEEK);
+
+  const activeDay5Month = path.join(out, 'active-day-5month.json');
+  await generateDailyActiveNode(nodeIndexer, activeDay5Month, 5 * common.MONTH);
+
+  const hostsPath = path.join(out, 'hosts');
+  await generateGeneralPerHostStats(nodeIndexer, hostsPath);
+
+  await sdb.close();
+})().catch((e) => {
+  console.error(e.stack);
+  process.exit(1);
+});
+
+async function generateHostIpPort(indexer, list) {
+  const all = list.map((str) => {
+    return HostIpPort.fromString(str);
+  });
+
+  const final = {};
+  for (const host of all) {
+    const data = final[host.host] || {};
+    const isUp = await indexer.isUp(host.dbKey);
+    const lastUp = await indexer.getLastUp(host.dbKey);
+    const lastStatus = await indexer.getLastStatus(host.dbKey);
+
+    data[host.port] = {
+      isUp,
+      lastUp,
+      lastStatus
+    };
+
+    final[host.host] = data;
+  }
+
+  return {
+    all,
+    final
+  };
+}
+
+async function generateTotalNow(indexer, totalNowPath) {
+  const upCounts = await indexer.getUpCounts();
+
+  const mainSeeds = seeds.filter(s => s.indexOf('@') !== -1);
+  const mainNormal = mainSeeds.map(s => s.split('@')[1]);
+  const others = seeds.filter(s => s.indexOf('@') === -1)
+    .filter(s => mainNormal.indexOf(s) === -1);
+
+  const main = await generateHostIpPort(indexer, [...mainSeeds, ...mainNormal]);
+  const generatedSeeds = await generateHostIpPort(indexer, others);
+
+  const out = {
+    timestamp: NOW,
+    upCounts: upCounts.toJSON(),
+    version: hsdVersion,
+    mainSeeds: {
+      total: main.all.length,
+      up: main.all.filter(host => main.final[host.host][host.port].isUp).length,
+      statuses: main.final
+    },
+    generatedSeeds: {
+      total: generatedSeeds.all.length,
+      up: generatedSeeds.all
+        .filter(host => generatedSeeds.final[host.host][host.port].isUp).length,
+      statuses: generatedSeeds.final
+    }
+  };
+
+  await bfs.writeJSON(totalNowPath, out);
+}
+
+/*
+ * Chosen time ranges and tick sizes are as follows:
+ *  - 10 minute intervals - 24 hours will be - 10 tick width & 144 entries.
+ */
+
+async function generate10MinuteActiveNodes(indexer, out, range = common.DAY) {
+  const timeSince = NOW - range;
+
+  const json = {
+    timestamp: NOW,
+    data: {}
+  };
+
+  const iter = indexer.get10mUpCountsByTime(timeSince);
+  for await (const [time, upCounts] of iter) {
+    json.data[time] = upCounts.toJSON();
+  }
+
+  await bfs.writeJSON(out, json);
+}
+
+async function generateHourlyActiveNode(indexer, out, range = common.WEEK) {
+  const timeSince = NOW - range;
+
+  const json = {
+    timestamp: NOW,
+    data: {}
+  };
+
+  const iter = indexer.getHourlyUpCountsByTime(timeSince);
+  for await (const [time, upCounts] of iter) {
+    json.data[time] = upCounts.toJSON();
+  }
+
+  await bfs.writeJSON(out, json);
+}
+
+async function generateDailyActiveNode(indexer, out, range = 5 * common.MONTH) {
+  const timeSince = NOW - range;
+
+  const json = {
+    timestamp: NOW,
+    data: {}
+  };
+
+  const iter = indexer.getDailyUpCountsByTime(timeSince);
+  for await (const [time, upCounts] of iter) {
+    json.data[time] = upCounts.toJSON();
+  }
+
+  await bfs.writeJSON(out, json);
+}
+
+async function generateGeneralPerHostStats(indexer, prefix) {
+  await bfs.mkdirp(prefix);
+
+  const done = new Set();
+
+  for await (const key of indexer.getHostPorts()) {
+    if (done.has(key))
+      return;
+
+    const hostPort = HostIpPort.fromDBKey(key);
+
+    const out = {
+      general: {},
+      ports: []
+    };
+
+    for await (const port of indexer.getPorts(hostPort.host)) {
+      out.ports.push(port);
+
+      const hostport2 = new HostIpPort(hostPort.host, port);
+      const isUp = await indexer.isUp(hostport2.dbKey);
+      const lastUp = await indexer.getLastUp(hostport2.dbKey);
+      const lastStatus = await indexer.getLastStatus(hostport2.dbKey);
+
+      out.general[port] = {
+        isUp,
+        lastUp,
+        lastStatus
+      };
+    }
+
+    const hostPath = path.join(prefix, hostPort.host);
+    await bfs.mkdirp(hostPath);
+    const generalPath = path.join(hostPath, 'general.json');
+    await bfs.writeJSON(generalPath, out);
+  }
+}
+
+class HostIpPort {
+  constructor(host, port, key) {
+    this.host = host;
+    this.port = port;
+    this.key = key;
+  }
+
+  get rawHost() {
+    return binet.decode(this.host);
+  }
+
+  set rawHost(raw) {
+    this.host = binet.encode(raw);
+  }
+
+  get rawHostAndPort() {
+    const raw = Buffer.alloc(16 + 2);
+
+    this.rawHost.copy(raw, 0);
+    raw.writeUInt16BE(this.port, 16);
+
+    return raw;
+  }
+
+  set rawHostAndPort(raw) {
+    this.rawHost = raw.slice(0, 16);
+    this.port = raw.readUInt16BE(16);
+  }
+
+  get hostAndPort() {
+    return this.host + ':' + this.port;
+  }
+
+  get dbKey() {
+    return this.rawHostAndPort;
+  }
+
+  static fromString(str) {
+    let { host, port, key } = binet.fromHost(str);
+
+    if (!port && key) {
+      port = hsdNetwork.brontidePort;
+    } else if (!port) {
+      port = hsdNetwork.port;
+    }
+
+    return new this(host, port, key);
+  };
+
+  static fromDBKey(key) {
+    const hostAndPort = new this();
+    hostAndPort.rawHostAndPort = key;
+    return hostAndPort;
+  }
+}
