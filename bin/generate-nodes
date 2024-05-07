@@ -113,11 +113,6 @@ async function generateTotalNow(indexer, totalNowPath) {
   await bfs.writeJSON(totalNowPath, out);
 }
 
-/*
- * Chosen time ranges and tick sizes are as follows:
- *  - 10 minute intervals - 24 hours will be - 10 tick width & 144 entries.
- */
-
 async function generate10MinuteActiveNodes(indexer, out, range = common.DAY) {
   const timeSince = NOW - range;
 
@@ -182,6 +177,11 @@ async function generateGeneralPerHostStats(indexer, prefix) {
       ports: []
     };
 
+    const hostPath = path.join(prefix, hostPort.host);
+    const generalPath = path.join(hostPath, 'general.json');
+
+    await bfs.mkdirp(hostPath);
+
     for await (const port of indexer.getPorts(hostPort.host)) {
       out.ports.push(port);
 
@@ -195,13 +195,76 @@ async function generateGeneralPerHostStats(indexer, prefix) {
         lastUp,
         lastStatus
       };
+
+      await generate10MinuteHistory(
+        indexer,
+        hostport2,
+        path.join(hostPath, `${port}-history-10m-day.json`)
+      );
+
+      await generateHourlyHistory(
+        indexer,
+        hostport2,
+        path.join(hostPath, `${port}-history-hour-week.json`)
+      );
+
+      await generateDailyHistory(
+        indexer,
+        hostport2,
+        path.join(hostPath, `${port}-history-day-5month.json`)
+      );
     }
 
-    const hostPath = path.join(prefix, hostPort.host);
-    await bfs.mkdirp(hostPath);
-    const generalPath = path.join(hostPath, 'general.json');
     await bfs.writeJSON(generalPath, out);
   }
+}
+
+async function generate10MinuteHistory(indexer, hostIpPort, out, range = common.DAY) {
+  const timeSince = NOW - range;
+
+  const json = {
+    timestamp: NOW,
+    data: {}
+  };
+
+  const iter = indexer.getLastStatusesByTime(hostIpPort.dbKey, timeSince);
+  for await (const [time, status] of iter) {
+    json.data[time] = status.toJSON();
+  }
+
+  await bfs.writeJSON(out, json);
+}
+
+async function generateHourlyHistory(indexer, hostIpPort, out, range = common.WEEK) {
+  const timeSince = NOW - range;
+
+  const json = {
+    timestamp: NOW,
+    data: {}
+  };
+
+  const iter = indexer.getHourlyStatusesByTime(hostIpPort.dbKey, timeSince);
+  for await (const [time, status] of iter) {
+    json.data[time] = status.toJSON();
+  }
+
+  await bfs.writeJSON(out, json);
+}
+
+async function generateDailyHistory(indexer, hostIpPort, out, range = 5 * common.MONTH) {
+  const timeSince = NOW - range;
+
+  const json = {
+    timestamp: NOW,
+    data: {}
+  };
+
+  const iter = indexer.getDailyStatusesByTime(hostIpPort.dbKey, timeSince);
+  for await (const [time, status] of iter) {
+    json.data[time] = status.toJSON();
+  }
+
+  await bfs.writeJSON(out, json);
 }
 
 class HostIpPort {
