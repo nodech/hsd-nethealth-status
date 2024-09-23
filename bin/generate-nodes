@@ -27,6 +27,8 @@ const sdb = new StatusDB({
   prefix: config.prefix
 });
 
+const log = (...args) => {};
+
 (async () => {
   const out = config.get('output');
   assert(await bfs.exists(out), 'Output directory does not exist.');
@@ -35,20 +37,26 @@ const sdb = new StatusDB({
   await sdb.open();
 
   const totalNowPath = path.join(out, 'general.json');
+  log('Generating total now stats.');
   await generateTotalNow(nodeIndexer, totalNowPath);
 
   const active10mday = path.join(out, 'active-10m-day.json');
+  log('Generating 10 minute active nodes.');
   await generate10MinuteActiveNodes(nodeIndexer, active10mday, common.DAY);
 
   const activeHourWeek = path.join(out, 'active-hour-week.json');
+  log('Generating hourly active nodes.');
   await generateHourlyActiveNode(nodeIndexer, activeHourWeek, common.WEEK);
 
   const activeDay5Month = path.join(out, 'active-day-5month.json');
+  log('Generating daily active nodes.');
   await generateDailyActiveNode(nodeIndexer, activeDay5Month, 5 * common.MONTH);
 
   const hostsPath = path.join(out, 'hosts');
+  log('Generating general per host stats.');
   await generateGeneralPerHostStats(nodeIndexer, hostsPath);
 
+  log('Cleaning up stale nodes.');
   await nodeIndexer.cleanupStale();
 
   await sdb.close();
@@ -141,6 +149,7 @@ async function generate10MinuteActiveNodes(indexer, out, range = common.DAY) {
     json.data[time] = upCounts.toJSON();
   }
 
+  log('Cleaning up 10 minute up counts.');
   await indexer.cleanup10mUpCounts(timeSince);
   await bfs.writeJSON(out, json);
 }
@@ -165,6 +174,7 @@ async function generateHourlyActiveNode(indexer, out, range = common.WEEK) {
     json.data[time] = upCounts.toJSON();
   }
 
+  log('Cleaning up hourly up counts.');
   await indexer.cleanupHourlyUpCounts(timeSince);
   await bfs.writeJSON(out, json);
 }
@@ -189,6 +199,7 @@ async function generateDailyActiveNode(indexer, out, range = 5 * common.MONTH) {
     json.data[time] = upCounts.toJSON();
   }
 
+  log('Cleaning up daily up counts.');
   await indexer.cleanupDailyUpCounts(timeSince);
   await bfs.writeJSON(out, json);
 }
@@ -234,18 +245,21 @@ async function generateGeneralPerHostStats(indexer, prefix) {
         lastStatus
       };
 
+      log(`Generating history for ${hostPort.host}:${port}.`);
       await generate10MinuteHistory(
         indexer,
         hostport2,
         path.join(hostPath, `${port}-history-10m-day.json`)
       );
 
+      log(`Generating hourly history for ${hostPort.host}:${port}.`);
       await generateHourlyHistory(
         indexer,
         hostport2,
         path.join(hostPath, `${port}-history-hour-week.json`)
       );
 
+      log(`Generating daily history for ${hostPort.host}:${port}.`);
       await generateDailyHistory(
         indexer,
         hostport2,
@@ -270,7 +284,9 @@ async function generate10MinuteHistory(indexer, hostIpPort, out, range = common.
     json.data[time] = status.toJSON();
   }
 
-  await indexer.cleanup10mUpCounts(timeSince);
+  log('Cleaning up 10 minute statuses for ' +
+      `${hostIpPort.host}:${hostIpPort.port}.`);
+  await indexer.cleanupLastStatusesByTime(hostIpPort.dbKey, timeSince);
   await bfs.writeJSON(out, json);
 }
 
@@ -287,7 +303,8 @@ async function generateHourlyHistory(indexer, hostIpPort, out, range = common.WE
     json.data[time] = status.toJSON();
   }
 
-  await indexer.cleanupHourlyUpCounts(timeSince);
+  log(`Cleaning up hourly statuses for ${hostIpPort.host}:${hostIpPort.port}.`);
+  await indexer.cleanupHourlyStatusesByTime(hostIpPort.dbKey, timeSince);
   await bfs.writeJSON(out, json);
 }
 
@@ -304,7 +321,8 @@ async function generateDailyHistory(indexer, hostIpPort, out, range = 5 * common
     json.data[time] = status.toJSON();
   }
 
-  await indexer.cleanupDailyUpCounts(timeSince);
+  log(`Cleaning up daily statuses for ${hostIpPort.host}:${hostIpPort.port}.`);
+  await indexer.cleanupDailyStatusesByTime(hostIpPort.dbKey, timeSince);
   await bfs.writeJSON(out, json);
 }
 
