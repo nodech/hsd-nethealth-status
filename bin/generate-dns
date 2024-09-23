@@ -63,6 +63,8 @@ const sdb = new StatusDB({
   const upDailyPath5m = path.join(out, 'up-5months-day.json');
   await generateUpCountDaily(upDailyPath5m, dnsIndexer, common.MONTH * 5);
 
+  await dnsIndexer.cleanupStale();
+
   await sdb.close();
 })().catch((e) => {
   console.error(e.stack);
@@ -125,6 +127,7 @@ async function generate10MinuteStats(out, dnsIndexer, range = common.DAY) {
       json.data[time] = stat.isSuccessful() ? 1 : 0;
     }
 
+    await dnsIndexer.cleanupLastStatusesByTime(hostname, timeSince);
     await bfs.writeJSON(filename, json);
   }
 }
@@ -155,6 +158,7 @@ async function generateHourlyStats(out, dnsIndexer, range = common.MONTH) {
       json.data[time] = entry;
     }
 
+    await dnsIndexer.cleanupHourlyStatusesByTime(hostname, timeSince);
     await bfs.writeJSON(filename, json);
   }
 }
@@ -185,6 +189,7 @@ async function generateDailyStats(out, dnsIndexer, range = common.MONTH * 3) {
       json.data[time] = entry;
     }
 
+    await dnsIndexer.cleanupDailyStatusesByTime(hostname, timeSince);
     await bfs.writeJSON(filename, json);
   }
 }
@@ -209,6 +214,7 @@ async function generateUpCount10m(jsonOut, dnsIndexer, range = common.DAY) {
     json.data[time] = count;
   }
 
+  await dnsIndexer.cleanup10mUpCounts(timeSince);
   await bfs.writeJSON(jsonOut, json);
 }
 
@@ -232,6 +238,7 @@ async function generateUpCountHourly(jsonOut, dnsIndexer, range = common.MONTH) 
     json.data[time] = count;
   }
 
+  await dnsIndexer.cleanupHourlyUpCounts(timeSince);
   await bfs.writeJSON(jsonOut, json);
 }
 
@@ -255,5 +262,6 @@ async function generateUpCountDaily(jsonOut, dnsIndexer, range = common.MONTH * 
     json.data[time] = count;
   }
 
+  await dnsIndexer.cleanupDailyUpCounts(timeSince);
   await bfs.writeJSON(jsonOut, json);
 }
