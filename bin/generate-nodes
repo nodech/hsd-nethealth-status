@@ -270,6 +270,7 @@ async function generate10MinuteHistory(indexer, hostIpPort, out, range = common.
     json.data[time] = status.toJSON();
   }
 
+  await indexer.cleanup10mUpCounts(timeSince);
   await bfs.writeJSON(out, json);
 }
 
@@ -286,6 +287,7 @@ async function generateHourlyHistory(indexer, hostIpPort, out, range = common.WE
     json.data[time] = status.toJSON();
   }
 
+  await indexer.cleanupHourlyUpCounts(timeSince);
   await bfs.writeJSON(out, json);
 }
 
@@ -302,6 +304,7 @@ async function generateDailyHistory(indexer, hostIpPort, out, range = 5 * common
     json.data[time] = status.toJSON();
   }
 
+  await indexer.cleanupDailyUpCounts(timeSince);
   await bfs.writeJSON(out, json);
 }
 
