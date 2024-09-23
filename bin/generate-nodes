@@ -49,6 +49,8 @@ const sdb = new StatusDB({
   const hostsPath = path.join(out, 'hosts');
   await generateGeneralPerHostStats(nodeIndexer, hostsPath);
 
+  await nodeIndexer.cleanupStale();
+
   await sdb.close();
 })().catch((e) => {
   console.error(e.stack);
