@@ -82,6 +82,12 @@ async function generateHostIpPort(indexer, list) {
   };
 }
 
+/**
+ * @param {NodeIndexer} indexer
+ * @param {String} totalNowPath
+ * @returns {Promise}
+ */
+
 async function generateTotalNow(indexer, totalNowPath) {
   const upCounts = await indexer.getUpCounts();
 
@@ -113,6 +119,13 @@ async function generateTotalNow(indexer, totalNowPath) {
   await bfs.writeJSON(totalNowPath, out);
 }
 
+/**
+ * @param {NodeIndexer} indexer
+ * @param {String} out
+ * @param {Number} [range=common.DAY]
+ * @returns {Promise}
+ */
+
 async function generate10MinuteActiveNodes(indexer, out, range = common.DAY) {
   const timeSince = NOW - range;
 
@@ -126,8 +139,16 @@ async function generate10MinuteActiveNodes(indexer, out, range = common.DAY) {
     json.data[time] = upCounts.toJSON();
   }
 
+  await indexer.cleanup10mUpCounts(timeSince);
   await bfs.writeJSON(out, json);
 }
+
+/**
+ * @param {NodeIndexer} indexer
+ * @param {String} out
+ * @param {Number} [range=common.DAY]
+ * @returns {Promise}
+ */
 
 async function generateHourlyActiveNode(indexer, out, range = common.WEEK) {
   const timeSince = NOW - range;
@@ -142,8 +163,16 @@ async function generateHourlyActiveNode(indexer, out, range = common.WEEK) {
     json.data[time] = upCounts.toJSON();
   }
 
+  await indexer.cleanupHourlyUpCounts(timeSince);
   await bfs.writeJSON(out, json);
 }
+
+/**
+ * @param {NodeIndexer} indexer
+ * @param {String} out
+ * @param {Number} [range=common.DAY]
+ * @returns {Promise}
+ */
 
 async function generateDailyActiveNode(indexer, out, range = 5 * common.MONTH) {
   const timeSince = NOW - range;
@@ -158,8 +187,15 @@ async function generateDailyActiveNode(indexer, out, range = 5 * common.MONTH) {
     json.data[time] = upCounts.toJSON();
   }
 
+  await indexer.cleanupDailyUpCounts(timeSince);
   await bfs.writeJSON(out, json);
 }
+
+/**
+ * @param {NodeIndexer} indexer
+ * @param {String} prefix
+ * @returns {Promise}
+ */
 
 async function generateGeneralPerHostStats(indexer, prefix) {
   await bfs.mkdirp(prefix);
