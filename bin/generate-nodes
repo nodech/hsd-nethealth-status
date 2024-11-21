@@ -42,6 +42,10 @@ const log = (...args) => {};
   log('Generating total now stats.');
   await generateTotalNow(nodeIndexer, totalNowPath);
 
+  const onlineNow = path.join(out, 'online-now.json');
+  log('Generating online now stats.');
+  await generateOnlineNow(nodeIndexer, onlineNow);
+
   const active10mday = path.join(out, 'active-10m-day.json');
   log('Generating 10 minute active nodes.');
   await generate10MinuteActiveNodes(nodeIndexer, active10mday, common.DAY);
@@ -67,11 +71,7 @@ const log = (...args) => {};
   process.exit(1);
 });
 
-async function generateHostIpPort(indexer, list) {
-  const all = list.map((str) => {
-    return HostIpPort.fromString(str);
-  });
-
+async function generateHostIpPort(indexer, all) {
   const final = {};
   for (const host of all) {
     const data = final[host.host] || {};
@@ -108,8 +108,16 @@ async function generateTotalNow(indexer, totalNowPath) {
   const others = seeds.filter(s => s.indexOf('@') === -1)
     .filter(s => mainNormal.indexOf(s) === -1);
 
-  const main = await generateHostIpPort(indexer, [...mainSeeds, ...mainNormal]);
-  const generatedSeeds = await generateHostIpPort(indexer, others);
+  const toHostIpPort = str => HostIpPort.fromString(str);
+  const main = await generateHostIpPort(indexer, [
+    ...mainSeeds.map(toHostIpPort),
+    ...mainNormal.map(toHostIpPort)
+  ]);
+
+  const generatedSeeds = await generateHostIpPort(
+    indexer,
+    others.map(toHostIpPort)
+  );
 
   const out = {
     timestamp: NOW,
@@ -129,6 +137,26 @@ async function generateTotalNow(indexer, totalNowPath) {
   };
 
   await bfs.writeJSON(totalNowPath, out);
+}
+
+/**
+ * @param {NodeIndexer} indexer
+ * @param {String} out
+ * @returns {Promise}
+ */
+
+async function generateOnlineNow(indexer, out) {
+  const onlineNodes = [];
+
+  for await (const online of indexer.getOnlineHostPorts())
+    onlineNodes.push(HostIpPort.fromDBKey(online));
+
+  const {final} = await generateHostIpPort(indexer, onlineNodes);
+  const json = {
+    data: final
+  };
+
+  await bfs.writeJSON(out, json);
 }
 
 /**
