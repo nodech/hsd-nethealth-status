@@ -36,6 +36,8 @@ const log = (...args) => {};
   const {nodeIndexer} = sdb;
   await sdb.open();
 
+  nodeIndexer.init();
+
   const totalNowPath = path.join(out, 'general.json');
   log('Generating total now stats.');
   await generateTotalNow(nodeIndexer, totalNowPath);
