@@ -26,8 +26,8 @@
     "bsert": "~0.0.13",
     "buffer-map": "~0.0.8",
     "bufio": "~1.2.2",
-    "hsd": "~6.1.1",
-    "hsd-nethealth": "~0.0.2"
+    "hsd": "~7.0.0",
+    "hsd-nethealth": "~0.0.3"
   },
   "devDependencies": {
     "perf-utils": "^0.0.3"
