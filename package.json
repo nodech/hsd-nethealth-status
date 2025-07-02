@@ -26,10 +26,11 @@
     "bsert": "~0.0.13",
     "buffer-map": "~0.0.8",
     "bufio": "~1.2.2",
-    "hsd": "~7.0.0",
-    "hsd-nethealth": "~0.0.3"
+    "hsd": "~8.0.0",
+    "hsd-nethealth": "~0.0.4"
   },
   "devDependencies": {
+    "bslintrc": "^0.0.3",
     "perf-utils": "^0.0.3"
   },
   "engines": {
